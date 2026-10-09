@@ -1,0 +1,40 @@
+# Capa de publicación: nginx como proxy inverso delante de todo el stack + ngrok para exponerlo
+# con una URL pública, sin tocar ningún repo de servicio.
+#
+# Requiere que ya estén arriba (en este orden, cada uno desde su propio repo):
+#   rtm-iam-db -> rtm-fleet-maintenance-db -> rtm-booking-db -> rtm-payment-billing-db ->
+#   rtm-iam -> rtm-fleet-maintenance -> rtm-booking-reservation -> rtm-payment-billing ->
+#   rtm-api-gateway -> RentaMovil/web/Front-end (docker compose up -d --build)
+#
+# Todos en la misma red externa "rentamovil" (docker network create rentamovil, una sola vez).
+services:
+  nginx:
+    image: nginx:latest
+    container_name: rentamovil-nginx
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    ports:
+      - "80:80"
+    networks: [rentamovil]
+    restart: unless-stopped
+
+  ngrok:
+    image: ngrok/ngrok:latest
+    container_name: rentamovil-ngrok
+    restart: unless-stopped
+    environment:
+      NGROK_AUTHTOKEN: ${NGROK_AUTHTOKEN}
+    command:
+      - "http"
+      - "--url=${NGROK_DOMAIN}"
+      - "nginx:80"
+      - "--log=stdout"
+    depends_on: [nginx]
+    networks: [rentamovil]
+    # Panel local de ngrok (inspección de requests, URL pública asignada): http://localhost:4040
+    ports:
+      - "4040:4040"
+
+networks:
+  rentamovil:
+    external: true
