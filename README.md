@@ -6,7 +6,7 @@ modificar ningún repo de servicio. Pensado para correr en el VPS de producción
 
 ## Cómo enruta nginx
 
-El front web (`RentaMovil/web/Front-end`) ya llama a `/api/...` en su propio origen por defecto
+El front web (`rtm-frontend/web/Front-end`) ya llama a `/api/...` en su propio origen por defecto
 (`httpClient.js`: `API_URL = import.meta.env.VITE_API_URL || '/api'`), igual que hace el proxy de
 Vite en desarrollo. Por eso nginx solo necesita reproducir el mismo esquema de rutas:
 
@@ -41,7 +41,7 @@ cd ../rtm-telemetry-gps && docker compose up -d && cd ../rtm-deploy
 cd ../rtm-api-gateway && docker compose up -d && cd ../rtm-deploy
 
 # 3. Front web
-cd ../RentaMovil/web/Front-end && docker compose up -d --build && cd ../../../rtm-deploy
+cd ../rtm-frontend/web/Front-end && docker compose up -d --build && cd ../../../rtm-deploy
 
 # 4. Esta capa: nginx (ver "Primer certificado" abajo antes del primer arranque)
 docker compose up -d
@@ -110,7 +110,7 @@ No se publica en tiendas (fuera de alcance de esta entrega). Se compila como bui
 Android, apuntando al dominio real:
 
 ```bash
-cd ../RentaMovil/app_mobile/Frontend
+cd ../rtm-frontend/app_mobile/Frontend
 # EXPO_PUBLIC_API_URL=https://rentamovil.tech/api en .env de este repo
 eas build --platform android --profile preview
 ```

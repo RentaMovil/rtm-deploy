@@ -5,7 +5,7 @@
 #   rtm-iam-db -> rtm-fleet-maintenance-db -> rtm-booking-db -> rtm-payment-billing-db ->
 #   rtm-telemetry-gps-db -> rtm-iam -> rtm-fleet-maintenance -> rtm-booking-reservation ->
 #   rtm-payment-billing -> rtm-telemetry-gps -> rtm-api-gateway ->
-#   RentaMovil/web/Front-end (docker compose up -d --build)
+#   rtm-frontend/web/Front-end (docker compose up -d --build)
 #
 # Todos en la misma red externa "rentamovil" (docker network create rentamovil, una sola vez).
 #
