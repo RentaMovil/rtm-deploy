@@ -1,39 +1,29 @@
-# Capa de publicación: nginx como proxy inverso delante de todo el stack + ngrok para exponerlo
-# con una URL pública, sin tocar ningún repo de servicio.
+# Capa de publicación: nginx como proxy inverso delante de todo el stack, con HTTPS real
+# (Let's Encrypt) sobre rentamovil.tech. Sin tocar ningún repo de servicio.
 #
 # Requiere que ya estén arriba (en este orden, cada uno desde su propio repo):
 #   rtm-iam-db -> rtm-fleet-maintenance-db -> rtm-booking-db -> rtm-payment-billing-db ->
-#   rtm-iam -> rtm-fleet-maintenance -> rtm-booking-reservation -> rtm-payment-billing ->
-#   rtm-api-gateway -> RentaMovil/web/Front-end (docker compose up -d --build)
+#   rtm-telemetry-gps-db -> rtm-iam -> rtm-fleet-maintenance -> rtm-booking-reservation ->
+#   rtm-payment-billing -> rtm-telemetry-gps -> rtm-api-gateway ->
+#   RentaMovil/web/Front-end (docker compose up -d --build)
 #
 # Todos en la misma red externa "rentamovil" (docker network create rentamovil, una sola vez).
+#
+# El certificado de Let's Encrypt vive en el filesystem del VPS (/etc/letsencrypt), generado por
+# certbot fuera de Docker (ver README). nginx solo lo monta de solo lectura.
 services:
   nginx:
     image: nginx:latest
     container_name: rentamovil-nginx
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./certbot-www:/var/www/certbot:ro
+      - /etc/letsencrypt:/etc/letsencrypt:ro
     ports:
       - "80:80"
+      - "443:443"
     networks: [rentamovil]
     restart: unless-stopped
-
-  ngrok:
-    image: ngrok/ngrok:latest
-    container_name: rentamovil-ngrok
-    restart: unless-stopped
-    environment:
-      NGROK_AUTHTOKEN: ${NGROK_AUTHTOKEN}
-    command:
-      - "http"
-      - "--url=${NGROK_DOMAIN}"
-      - "nginx:80"
-      - "--log=stdout"
-    depends_on: [nginx]
-    networks: [rentamovil]
-    # Panel local de ngrok (inspección de requests, URL pública asignada): http://localhost:4040
-    ports:
-      - "4040:4040"
 
 networks:
   rentamovil:

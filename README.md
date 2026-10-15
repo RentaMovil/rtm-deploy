@@ -1,10 +1,8 @@
 # rtm-deploy
 
 Capa de publicación para RentaMóvil: **nginx** como proxy inverso delante de todo el stack
-(front web + API Gateway) y **ngrok** para exponerlo con una URL pública, sin modificar ningún
-repo de servicio. Pensado para correr en una máquina Linux dedicada (servidor local), con el
-mismo patrón que `docker-compose.yml` + `nginx.conf` + `ngrok` que ya validó el equipo en otro
-proyecto.
+(front web + API Gateway) con **HTTPS real** sobre `rentamovil.tech` (Let's Encrypt), sin
+modificar ningún repo de servicio. Pensado para correr en el VPS de producción.
 
 ## Cómo enruta nginx
 
@@ -15,12 +13,11 @@ Vite en desarrollo. Por eso nginx solo necesita reproducir el mismo esquema de r
 | Ruta pública | A dónde va | Para qué |
 |---|---|---|
 | `/` | contenedor `web` (:4173) | Front web (build de producción) |
-| `/api/*` | contenedor `api-gateway` (:8080), sin el prefijo `/api` | Todo lo que ya tiene backend real (auth, vehículos, reservas, pagos...) |
+| `/api/*` | contenedor `api-gateway` (:8080), sin el prefijo `/api` | Todo lo que ya tiene backend real (auth, vehículos, reservas, pagos, GPS...) |
 | `/mock/*` | contenedor `mock-api` (:3100), sin el prefijo `/mock` | Lo que todavía no tiene servicio real |
 
-**La app móvil** debe apuntar su `EXPO_PUBLIC_API_URL` a `https://<tu-dominio-ngrok>/api` (no a
-la raíz) — así usa exactamente el mismo `location /api/` que el front web, sin necesitar un
-segundo túnel ni un dominio aparte.
+**La app móvil** debe apuntar su `EXPO_PUBLIC_API_URL` a `https://rentamovil.tech/api` (no a la
+raíz) — así usa exactamente el mismo `location /api/` que el front web.
 
 ## Orden de arranque (todo con la red compartida `rentamovil`)
 
@@ -33,57 +30,94 @@ cd ../rtm-iam-db && docker compose up -d && cd ../rtm-deploy
 cd ../rtm-fleet-maintenance-db && docker compose up -d && cd ../rtm-deploy
 cd ../rtm-booking-db && docker compose up -d && cd ../rtm-deploy
 cd ../rtm-payment-billing-db && docker compose up -d && cd ../rtm-deploy
+cd ../rtm-telemetry-gps-db && docker compose up -d && cd ../rtm-deploy
 
 # 2. Servicios de aplicación
 cd ../rtm-iam && docker compose up -d && cd ../rtm-deploy
 cd ../rtm-fleet-maintenance && docker compose up -d && cd ../rtm-deploy
 cd ../rtm-booking-reservation && docker compose up -d && cd ../rtm-deploy
 cd ../rtm-payment-billing && docker compose up -d && cd ../rtm-deploy
+cd ../rtm-telemetry-gps && docker compose up -d && cd ../rtm-deploy
 cd ../rtm-api-gateway && docker compose up -d && cd ../rtm-deploy
 
 # 3. Front web
 cd ../RentaMovil/web/Front-end && docker compose up -d --build && cd ../../../rtm-deploy
 
-# 4. Esta capa: nginx + ngrok
-cp .env.example .env   # pega tu NGROK_AUTHTOKEN real
+# 4. Esta capa: nginx (ver "Primer certificado" abajo antes del primer arranque)
 docker compose up -d
 ```
 
-## Obtener la URL pública
+## DNS
+
+Antes de cualquier certificado: en el panel de tu proveedor de dominio, crea un registro **A**
+para `rentamovil.tech` y otro para `www.rentamovil.tech`, apuntando ambos al IP público del VPS.
+Sin esto Certbot no puede verificar que el dominio es tuyo.
+
+## Primer certificado (una sola vez, antes del primer `docker compose up -d` de este repo)
+
+Certbot corre **en el VPS, no en un contenedor** — más simple para este tamaño de proyecto, y el
+certificado queda en `/etc/letsencrypt` del host, que `docker-compose.yml` monta de solo lectura
+dentro de nginx.
 
 ```bash
-docker compose logs ngrok | grep -i "url="
+# Instala certbot en el VPS (Ubuntu/Debian)
+sudo apt update && sudo apt install -y certbot
+
+# Crea la carpeta que nginx va a servir para la verificación (webroot), y que luego
+# se reutiliza para las renovaciones automáticas
+mkdir -p certbot-www
+
+# Pide el certificado con el plugin standalone (necesita el puerto 80 libre:
+# nginx todavía NO está arrancado en este punto)
+sudo certbot certonly --standalone \
+  -d rentamovil.tech -d www.rentamovil.tech \
+  --agree-tos -m tu-email@ejemplo.com --no-eff-email
 ```
 
-O entra al panel local de ngrok en `http://localhost:4040` (inspecciona requests en vivo, y ahí
-mismo aparece la URL pública asignada).
+Si todo sale bien, el certificado queda en `/etc/letsencrypt/live/rentamovil.tech/`. Recién ahora
+arrancas nginx (paso 4 del orden de arranque) — como el certificado ya existe, el `nginx.conf` con
+el bloque `443 ssl` arranca sin problema.
 
-> Con el plan gratuito de ngrok, la URL cambia cada vez que se reinicia el contenedor `ngrok`,
-> salvo que reserves un dominio fijo en tu cuenta (dashboard de ngrok → Domains) y lo agregues al
-> `command` de `docker-compose.yml` como `--url=tu-dominio.ngrok-free.dev` (igual que el ejemplo
-> de referencia del equipo).
+## Renovación automática (sin downtime)
+
+El certificado de Let's Encrypt dura 90 días. `certbot` instala un timer de systemd que revisa la
+renovación dos veces al día (no hace nada si todavía no está cerca de vencer), pero por defecto
+usaría de nuevo el plugin `standalone` — y eso tumbaría nginx cada vez. Para que renueve sin bajar
+el sitio, se le dice que use el webroot que nginx ya está sirviendo, y que recargue nginx después:
+
+```bash
+sudo certbot renew --webroot -w ./certbot-www \
+  --deploy-hook "docker exec rentamovil-nginx nginx -s reload"
+```
+
+Verifica que el timer automático de certbot vaya a usar esta misma configuración:
+
+```bash
+sudo systemctl list-timers | grep certbot
+```
 
 ## Verificar que todo responde
 
 ```bash
-curl http://localhost/              # front web
-curl http://localhost/api/health    # health del gateway, a través de nginx
+curl http://rentamovil.tech/        # debe redirigir (301) a https
+curl https://rentamovil.tech/       # front web
+curl https://rentamovil.tech/api/health   # health del gateway, a través de nginx
 ```
 
 ## App móvil (APK)
 
 No se publica en tiendas (fuera de alcance de esta entrega). Se compila como build interno de
-Android, apuntando a la URL pública de ngrok:
+Android, apuntando al dominio real:
 
 ```bash
 cd ../RentaMovil/app_mobile/Frontend
-# EXPO_PUBLIC_API_URL=https://<tu-dominio-ngrok>/api en .env de este repo
+# EXPO_PUBLIC_API_URL=https://rentamovil.tech/api en .env de este repo
 eas build --platform android --profile preview
 ```
 
-El `.apk` resultante se comparte por link/QR directo (ver riesgo `R-004` en
-`rtm-docs/15-project-control/risks.md`: la URL queda fija dentro del binario, así que hay que
-compilarlo después de confirmar la URL pública definitiva).
+El `.apk` resultante se comparte por link/QR directo. A diferencia de cuando se usaba ngrok, el
+dominio ya no cambia entre reinicios, así que el `.apk` no queda atado a una URL temporal — solo
+hay que recompilar si el dominio cambiara de verdad en el futuro.
 
 ## Correlación
 
