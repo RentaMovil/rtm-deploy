@@ -13,8 +13,7 @@ Vite en desarrollo. Por eso nginx solo necesita reproducir el mismo esquema de r
 | Ruta pública | A dónde va | Para qué |
 |---|---|---|
 | `/` | contenedor `web` (:4173) | Front web (build de producción) |
-| `/api/*` | contenedor `api-gateway` (:8080), sin el prefijo `/api` | Todo lo que ya tiene backend real (auth, vehículos, reservas, pagos, GPS...) |
-| `/mock/*` | contenedor `mock-api` (:3100), sin el prefijo `/mock` | Lo que todavía no tiene servicio real |
+| `/api/*` | contenedor `api-gateway` (:8080), sin el prefijo `/api` | Todo (auth, vehículos, reservas, pagos, GPS...) — ya no hay mock, todos los servicios existen |
 
 **La app móvil** debe apuntar su `EXPO_PUBLIC_API_URL` a `https://rentamovil.tech/api` (no a la
 raíz) — así usa exactamente el mismo `location /api/` que el front web.
