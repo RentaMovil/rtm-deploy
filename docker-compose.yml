@@ -11,13 +11,11 @@
 #
 # El certificado de Let's Encrypt vive en el filesystem del VPS (/etc/letsencrypt), generado por
 # certbot fuera de Docker (ver README). nginx solo lo monta de solo lectura.
-#
-# El panel de administración (Portainer CE) NO está aquí: va en
-# docker-compose.portainer.yml, aparte a propósito, para que la capa que sostiene el
-# sitio en producción no dependa de que el panel levante bien.
 services:
   nginx:
-    image: nginx:latest
+    # Tag exacto, no "latest": que un pull reconstruya el mismo build, no lo que sea
+    # que Docker Hub tenga publicado ese día.
+    image: nginx:1.30.6
     container_name: rentamovil-nginx
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
